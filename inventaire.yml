@@ -1,0 +1,6 @@
+all:
+  children:
+    serveurs:
+      hosts:
+        staging:
+        prod:
