@@ -1,0 +1,17 @@
+---
+- name: Création de l'utilisateur ansible sur Windows
+  hosts: windows
+
+  tasks:
+    - name: Créer l'utilisateur local ansible
+      ansible.windows.win_user:
+        name: ansible
+        password: "{{ vault_ansible_win_password }}"
+        fullname: Compte Ansible
+        description: Compte de service pour l'automatisation Ansible
+        password_never_expires: true
+        update_password: on_create
+        groups:
+          - Administrateurs
+        groups_action: add
+        state: present
