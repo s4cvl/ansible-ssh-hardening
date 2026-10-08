@@ -1,0 +1,6 @@
+---
+- name: Création de l'utilisateur d'administration
+  hosts: serveurs
+  become: true
+  roles:
+    - role: admin_user

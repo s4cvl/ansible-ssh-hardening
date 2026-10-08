@@ -1,0 +1,73 @@
+---
+- name: Installer BIND
+  ansible.builtin.dnf:
+    name:
+      - bind
+      - bind-utils
+    state: present
+
+- name: S'assurer que named est démarré et activé
+  ansible.builtin.service:
+    name: named
+    state: started
+    enabled: true
+
+- name: Vérifier qu'un DNS redirecteur a été trouvé sur l'hôte
+  ansible.builtin.assert:
+    that: bind_forwarders | length > 0
+    fail_msg: "Aucun DNS exploitable dans /etc/resolv.conf"
+
+- name: Déployer la configuration BIND avec contrôle et rollback
+  block:
+    - name: Sauvegarder la configuration actuelle (fonctionnelle)
+      ansible.builtin.copy:
+        src: "{{ bind_conf }}"
+        dest: "{{ bind_conf_backup }}"
+        remote_src: true
+        owner: root
+        group: named
+        mode: "0640"
+
+    - name: Injecter la nouvelle configuration
+      ansible.builtin.template:
+        src: named.conf.j2
+        dest: "{{ bind_conf }}"
+        owner: root
+        group: named
+        mode: "0640"
+      register: bind_template
+
+    - name: Contrôler la syntaxe du fichier injecté
+      ansible.builtin.command: "named-checkconf {{ bind_conf }}"
+      changed_when: false
+
+    - name: Redémarrer named si la configuration a changé
+      ansible.builtin.service:
+        name: named
+        state: restarted
+      when: bind_template is changed
+
+    - name: Tester la résolution via le redirecteur
+      ansible.builtin.command: "dig @127.0.0.1 {{ bind_test_domain }} +short +time=3 +tries=2"
+      register: bind_dig
+      changed_when: false
+      failed_when: bind_dig.rc != 0 or bind_dig.stdout | length == 0
+
+  rescue:
+    - name: "[Rollback] Restaurer l'ancienne configuration"
+      ansible.builtin.copy:
+        src: "{{ bind_conf_backup }}"
+        dest: "{{ bind_conf }}"
+        remote_src: true
+        owner: root
+        group: named
+        mode: "0640"
+
+    - name: "[Rollback] Redémarrer named"
+      ansible.builtin.service:
+        name: named
+        state: restarted
+
+    - name: "[Rollback] Interruption"
+      ansible.builtin.fail:
+        msg: "Configuration BIND invalide sur {{ inventory_hostname }} : rollback effectué"

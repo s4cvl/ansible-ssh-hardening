@@ -1,0 +1,27 @@
+---
+- name: Autoriser la clé d'ansible@srv-ansible uniquement depuis son IP
+  ansible.builtin.copy:
+    dest: /home/ansible/.ssh/authorized_keys
+    content: |
+      from="{{ srv_ansible_ip }}" {{ controller_pubkey }}
+    owner: ansible
+    group: ansible
+    mode: "0600"
+
+- name: Verrouiller le mot de passe de l'utilisateur ansible
+  ansible.builtin.user:
+    name: ansible
+    password_lock: true
+
+- name: Restreindre la connexion SSH de l'utilisateur ansible
+  ansible.builtin.blockinfile:
+    path: /etc/ssh/sshd_config
+    marker: "# {mark} ANSIBLE MANAGED - restriction utilisateur ansible"
+    block: |
+      Match User ansible
+          AllowUsers ansible@{{ srv_ansible_ip }}
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          AuthenticationMethods publickey
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Redémarrer sshd

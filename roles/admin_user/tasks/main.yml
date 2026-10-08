@@ -1,0 +1,39 @@
+---
+- name: Générer un mot de passe aléatoire sécurisé
+  ansible.builtin.set_fact:
+    generated_admin_password: "{{ lookup('ansible.builtin.password', '/dev/null length=' ~ password_length ~ ' chars=ascii_letters,digits,hexdigest') }}"
+  no_log: true
+
+- name: Créer l'utilisateur d'administration
+  ansible.builtin.user:
+    name: "{{ admin_user_name }}"
+    shell: /bin/bash
+    password: "{{ generated_admin_password | password_hash('sha512') }}"
+    update_password: on_create
+  register: admin_user_result
+  no_log: true
+
+- name: Donner le droit sudo avec mot de passe
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ admin_user_name }}"
+    content: "{{ admin_user_name }} ALL=(ALL) ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Déployer la clé SSH publique issue du vault
+  ansible.posix.authorized_key:
+    user: "{{ admin_user_name }}"
+    key: "{{ admin_ssh_pubkey }}"
+    state: present
+
+- name: Afficher le mot de passe généré
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} : mot de passe de {{ admin_user_name }} = {{ generated_admin_password }}"
+  when: admin_user_result is changed
+
+- name: Signaler un utilisateur déjà existant
+  ansible.builtin.debug:
+    msg: "{{ admin_user_name }} existe déjà sur {{ inventory_hostname }}, mot de passe inchangé"
+  when: admin_user_result is not changed
