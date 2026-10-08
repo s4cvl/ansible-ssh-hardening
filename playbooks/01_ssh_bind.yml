@@ -1,0 +1,6 @@
+---
+- name: Sécurisation SSH et configuration de BIND
+  hosts: serveurs
+  become: true
+  roles:
+    - role: ssh_bind
