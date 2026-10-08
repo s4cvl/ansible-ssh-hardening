@@ -1,0 +1,10 @@
+---
+# IP de srv-ansible calculée à la volée (évite les soucis de DHCP)
+srv_ansible_ip: "{{ lookup('ansible.builtin.pipe', 'hostname -I').split() | first }}"
+controller_pubkey: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') + '/.ssh/id_ed25519.pub') }}"
+
+# DNS de l'hôte cible (resolv.conf), sans les adresses locales pour éviter une boucle
+bind_forwarders: "{{ ansible_facts['dns']['nameservers'] | reject('match', '^(127\\.|::1)') | list }}"
+bind_conf: /etc/named.conf
+bind_conf_backup: /etc/named.conf.ansible-bak
+bind_test_domain: oracle.com
