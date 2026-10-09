@@ -1,0 +1,61 @@
+---
+name: Ansible CI/CD
+
+on:
+  push:
+    branches: [develop, "feature*/**"]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  lint:
+    name: Lint et syntaxe Ansible
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer Ansible et yamllint
+        run: pip install ansible-core yamllint
+
+      - name: Installer les collections
+        run: ansible-galaxy collection install ansible.posix ansible.windows
+
+      - name: Recréer les fichiers de mot de passe vault
+        run: |
+          echo "${{ secrets.VAULT_PASS_STAGING }}" > .vault_pass_staging
+          echo "${{ secrets.VAULT_PASS_PROD }}" > .vault_pass_prod
+          chmod 600 .vault_pass_*
+
+      - name: Lint YAML
+        run: yamllint .
+
+      - name: Vérification de la syntaxe
+        run: ansible-playbook site.yml --syntax-check
+
+  deploy-staging:
+    name: Déploiement sur staging
+    needs: lint
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: [self-hosted, srv-ansible]
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Recréer les fichiers de mot de passe vault
+        run: |
+          echo "${{ secrets.VAULT_PASS_STAGING }}" > .vault_pass_staging
+          echo "${{ secrets.VAULT_PASS_PROD }}" > .vault_pass_prod
+          chmod 600 .vault_pass_*
+
+      - name: Exécution du playbook sur staging
+        run: ansible-playbook site.yml
+
+      - name: Nettoyage des secrets
+        if: always()
+        run: rm -f .vault_pass_*
