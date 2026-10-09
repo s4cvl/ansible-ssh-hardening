@@ -1,36 +1,66 @@
-# This is a basic workflow to help you get started with Actions
+---
+name: Ansible CI/CD
 
-name: CI
-
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
-    branches: [ "main" ]
+    branches: [develop, "feature*/**"]
   pull_request:
-    branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: [develop, main]
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
+  lint:
+    name: Lint et syntaxe Ansible
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      - name: Récupérer le code
+        uses: actions/checkout@v4
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Installer Ansible et yamllint
+        run: pip install ansible-core yamllint
+
+      - name: Installer les collections
+        run: ansible-galaxy collection install ansible.posix ansible.windows
+
+      - name: Recréer les fichiers de mot de passe vault
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          echo "${{ secrets.VAULT_PASS_STAGING }}" > .vault_pass_staging
+          echo "${{ secrets.VAULT_PASS_PROD }}" > .vault_pass_prod
+          chmod 600 .vault_pass_*
+
+      - name: Lint YAML
+        run: yamllint .
+
+      - name: Vérification de la syntaxe
+        run: ansible-playbook site.yml --syntax-check
+
+  deploy-staging:
+    name: Déploiement sur staging
+    needs: lint
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop'
+    runs-on: [self-hosted, srv-ansible]
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Recréer les fichiers de mot de passe vault
+        run: |
+          echo "${{ secrets.VAULT_PASS_STAGING }}" > .vault_pass_staging
+          echo "${{ secrets.VAULT_PASS_PROD }}" > .vault_pass_prod
+          chmod 600 .vault_pass_*
+
+      - name: Exécution du playbook sur staging
+        run: ansible-playbook site.yml
+
+      - name: Nettoyage des secrets
+        if: always()
+        run: rm -f .vault_pass_*
